@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+streamlit
+google-genai
+langfuse
+python-dotenv
+pydantic
+pytest
+httpx
+pymupdf
+python-docx
+pandas
+openpyxl
+sentence-transformers
+chromadb
