@@ -14,4 +14,4 @@ st.write(
     "and Langfuse observability."
 )
 
-st.info("Environment setup completed. RAG functionality will be added in upcoming stages.")
+st.info("Environment setup completed. RAG functionality has been added in upcoming stages.")
