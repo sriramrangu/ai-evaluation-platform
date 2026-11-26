@@ -1,5 +1,6 @@
 
 from backend.rag import answer_question
+# from backend.evaluation import evaluate_answer
 from backend.evaluation import evaluate_answer
 
 from langfuse import get_client
@@ -33,6 +34,9 @@ def test_rag():
         answer=result["answer"],
         retrieved_contexts=result["retrieved_contexts"]
     )
+
+    print("\nCUSTOM EVALUATION RESULTS:")
+    print(evaluation)
 
     print("\nEVALUATION RESULTS:")
 
