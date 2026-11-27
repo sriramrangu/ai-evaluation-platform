@@ -7,6 +7,9 @@ from langfuse import get_client as get_langfuse_client
 from backend.config import GEMINI_API_KEY, GEMINI_MODEL
 from backend.ingestion.vector_store import VectorStore
 
+from pathlib import Path
+from backend.ingestion.pipeline import process_document
+
 
 _client = None
 _vector_store = None
@@ -31,6 +34,35 @@ def get_vector_store():
 
     return _vector_store
 
+
+def _ingest_dataset_documents():
+
+    dataset_dir = Path(__file__).resolve().parents[1] / "datasets"
+
+    vector_store = get_vector_store()
+
+    for file_path in dataset_dir.iterdir():
+
+        if not file_path.is_file():
+            continue
+
+        if file_path.suffix.lower() in {".db", ".sqlite", ".sqlite3"}:
+            continue
+
+        try:
+            process_document(
+                file_path.name,
+                file_path.read_bytes(),
+                vector_store=vector_store
+            )
+
+        except Exception:
+            logger.exception(
+                "Failed to ingest document: %s",
+                file_path.name
+            )
+
+
 # 1. RAG QUESTION ANSWERING
 
 def _answer_question(question, top_k=4):
@@ -39,6 +71,8 @@ def _answer_question(question, top_k=4):
         raise ValueError("Question cannot be empty")
 
     start_time = time.perf_counter()
+
+    _ingest_dataset_documents()
 
     vector_store = get_vector_store()
 

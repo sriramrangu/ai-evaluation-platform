@@ -5,7 +5,7 @@ from langfuse import get_client
 
 def test_rag():
 
-    question = "What is machine learning?"
+    question = "When was Terastar found"
 
     result = answer_question(question)
 

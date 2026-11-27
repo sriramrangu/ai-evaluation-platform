@@ -19,6 +19,9 @@ env/
 .pytest_cache/
 .coverage
 
+#Sample Data
+.datasets/
+
 # Model and data files
 *.pt
 *.pth

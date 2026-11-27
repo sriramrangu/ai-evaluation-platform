@@ -1,4 +1,3 @@
-
 def retrieval_metrics(retrieved_chunk_ids, relevant_chunk_ids):
 
     if retrieved_chunk_ids is None:
