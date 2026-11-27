@@ -46,25 +46,25 @@ def retrieval_diversity(retrieved_contexts):
 
     if not retrieved_contexts:
         return {
-            "score": None,
-            "status": "not_applicable",
+            "score": 0.0,
             "total_chunks": 0,
             "unique_chunks": 0,
             "duplicate_chunks": 0
         }
 
-    normalized_chunks = {
-        " ".join(context.lower().split())
+    normalized_chunks = [
+        " ".join(context.split()).casefold()
         for context in retrieved_contexts
-    }
+    ]
 
-    total = len(retrieved_contexts)
-    unique = len(normalized_chunks)
+    unique_chunks = set(normalized_chunks)
+
+    total_chunks = len(normalized_chunks)
+    unique_count = len(unique_chunks)
 
     return {
-        "score": round(unique / total, 4),
-        "status": "evaluated",
-        "total_chunks": total,
-        "unique_chunks": unique,
-        "duplicate_chunks": total - unique
+        "score": round(unique_count / total_chunks, 4),
+        "total_chunks": total_chunks,
+        "unique_chunks": unique_count,
+        "duplicate_chunks": total_chunks - unique_count
     }

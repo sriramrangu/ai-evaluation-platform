@@ -1,14 +1,17 @@
 import time
+import logging
 
 from google import genai
+from langfuse import get_client as get_langfuse_client
 
 from backend.config import GEMINI_API_KEY, GEMINI_MODEL
 from backend.ingestion.vector_store import VectorStore
 
-from langfuse import get_client as get_langfuse_client
 
 _client = None
 _vector_store = None
+
+logger = logging.getLogger(__name__)
 
 
 def get_client():
@@ -28,6 +31,7 @@ def get_vector_store():
 
     return _vector_store
 
+# 1. RAG QUESTION ANSWERING
 
 def _answer_question(question, top_k=4):
 
@@ -102,14 +106,17 @@ ANSWER:
     response = None
 
     for attempt in range(3):
+
         try:
             response = get_client().models.generate_content(
                 model=GEMINI_MODEL,
                 contents=prompt
             )
+
             break
 
         except Exception as error:
+
             if "503" not in str(error) and "UNAVAILABLE" not in str(error):
                 raise
 
@@ -136,7 +143,35 @@ ANSWER:
     }
 
 
-def answer_question(question, top_k=4):
+# --------------------------------------------------
+# 2. OPTIONAL CUSTOM EVALUATION
+# --------------------------------------------------
+
+def _run_evaluation(result, use_llm_judge=True, use_langfuse=True):
+
+    from backend.evaluation import evaluate_answer
+
+    return evaluate_answer(
+        question=result["question"],
+        answer=result["answer"],
+        retrieved_contexts=result["retrieved_contexts"],
+        response_time_seconds=result["response_time_seconds"],
+        use_llm_judge=use_llm_judge,
+        use_langfuse=use_langfuse
+    )
+
+
+# --------------------------------------------------
+# 3. PUBLIC RAG FUNCTION
+# --------------------------------------------------
+
+def answer_question(
+    question,
+    top_k=4,
+    run_evaluation=False,
+    use_llm_judge=True,
+    evaluation_use_langfuse=True
+):
 
     langfuse = get_langfuse_client()
 
@@ -147,19 +182,51 @@ def answer_question(question, top_k=4):
 
         result = _answer_question(question, top_k)
 
+        evaluation_error = None
+
+        if run_evaluation and result["status"] == "success":
+
+            try:
+                result["evaluation"] = _run_evaluation(
+                    result,
+                    use_llm_judge=use_llm_judge,
+                    use_langfuse=evaluation_use_langfuse
+                )
+
+            except Exception as error:
+
+                evaluation_error = str(error)
+
+                logger.exception(
+                    "RAG evaluation failed for the generated answer"
+                )
+
+                result["evaluation"] = {
+                    "status": "failed",
+                    "error": evaluation_error
+                }
+
         span.update(
             input={
                 "question": question,
-                "top_k": top_k
+                "top_k": top_k,
+                "run_evaluation": run_evaluation
             },
             output={
                 "answer": result["answer"],
                 "sources": result["sources"],
-                "status": result["status"]
+                "status": result["status"],
+                "evaluation": result.get("evaluation")
             },
             metadata={
                 "retrieved_chunks": len(result["retrieved_contexts"]),
-                "response_time_seconds": result["response_time_seconds"]
+                "response_time_seconds": result["response_time_seconds"],
+                "evaluation_enabled": run_evaluation,
+                "evaluation_status": (
+                    "failed" if evaluation_error
+                    else "completed" if "evaluation" in result
+                    else "skipped"
+                )
             }
         )
 

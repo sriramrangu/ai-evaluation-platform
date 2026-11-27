@@ -115,44 +115,6 @@ def test_empty_retrieval():
     assert result["f1_score"] == 0.0
 
 
-def test_retrieval_diversity():
-
-    contexts = [
-        "Machine learning uses data.",
-        "Machine learning uses data.",
-        "Deep learning uses neural networks."
-    ]
-
-    result = retrieval_diversity(contexts)
-
-    assert result["score"] == 0.6667
-    assert result["total_chunks"] == 3
-    assert result["unique_chunks"] == 2
-    assert result["duplicate_chunks"] == 1
-
-
-def test_perfect_retrieval_diversity():
-
-    contexts = [
-        "Machine learning",
-        "Deep learning",
-        "Artificial intelligence"
-    ]
-
-    result = retrieval_diversity(contexts)
-
-    assert result["score"] == 1.0
-    assert result["duplicate_chunks"] == 0
-
-
-def test_empty_retrieval_diversity():
-
-    result = retrieval_diversity([])
-
-    assert result["score"] is None
-    assert result["status"] == "not_applicable"
-
-
 def test_custom_evaluation_metrics():
     answer = "Machine learning systems learn patterns from data."
 
@@ -188,3 +150,53 @@ def test_custom_evaluation_with_no_contexts():
     assert metrics["answer_context_overlap"]["score"] == 0
     assert metrics["retrieved_chunk_utilization"]["score"] == 0
     assert metrics["retrieval_redundancy"]["score"] == 0
+
+
+def test_retrieval_diversity():
+
+    contexts = [
+        "Machine learning uses data.",
+        "Deep learning uses neural networks.",
+        "Machine learning uses data.",
+        "Artificial intelligence is evolving."
+    ]
+
+    result = retrieval_diversity(contexts)
+
+    assert result["score"] == 0.75
+    assert result["total_chunks"] == 4
+    assert result["unique_chunks"] == 3
+    assert result["duplicate_chunks"] == 1
+
+
+def test_perfect_retrieval_diversity():
+
+    contexts = [
+        "Machine learning",
+        "Deep learning",
+        "Artificial intelligence"
+    ]
+
+    result = retrieval_diversity(contexts)
+
+    assert result["score"] == 1.0
+
+
+def test_zero_retrieval_diversity():
+
+    contexts = [
+        "Machine learning",
+        "Machine learning",
+        "Machine learning"
+    ]
+
+    result = retrieval_diversity(contexts)
+
+    assert result["score"] == 0.3333
+
+
+def test_empty_retrieval_diversity():
+
+    result = retrieval_diversity([])
+
+    assert result["score"] == 0.0

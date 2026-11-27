@@ -1,4 +1,3 @@
-
 import chromadb
 
 from pathlib import Path

@@ -1,16 +1,25 @@
+
+import gc
+import tempfile
+
 from backend.ingestion.document_loader import load_document
 from backend.ingestion.text_cleaner import clean_text
 from backend.ingestion.chunker import chunk_document
 from backend.ingestion.pipeline import process_document
-import tempfile
-
 from backend.ingestion.document_registry import DocumentRegistry
 from backend.ingestion.document_store import DocumentStore
+from backend.ingestion.vector_store import VectorStore
+
+def clear_test_vectors(vector_store):
+    """Delete all existing vectors from the test ChromaDB collection."""
+    existing = vector_store.collection.get()
+    ids = existing.get("ids", [])
+    if ids:
+        vector_store.collection.delete(ids=ids)
 
 def test_txt_ingestion():
 
     filename = "sample.txt"
-
     file_bytes = b"Production AI evaluation platform"
 
     document = load_document(filename, file_bytes)
@@ -36,7 +45,6 @@ def test_document_chunking():
     file_bytes = text.encode("utf-8")
 
     document = load_document("sample.txt", file_bytes)
-
     document.content = clean_text(document.content)
 
     chunks = chunk_document(
@@ -68,6 +76,7 @@ def test_document_chunking():
 
 
 def test_complete_ingestion_pipeline():
+
     text = (
         "Artificial intelligence is transforming industries. "
         "Machine learning enables systems to learn from data. "
@@ -75,47 +84,62 @@ def test_complete_ingestion_pipeline():
     ) * 30
 
     with tempfile.TemporaryDirectory() as temp_dir:
+
         registry = DocumentRegistry(
             f"{temp_dir}/pipeline_test.db"
         )
 
-        result = process_document(
-            "sample.txt",
-            text.encode("utf-8"),
-            registry=registry
+        vector_store = VectorStore(
+            persist_directory="datasets/chroma_test_db"
         )
 
-        document = result["document"]
-        chunks = result["chunks"]
-        report = result["report"]
+        clear_test_vectors(vector_store)
 
-        assert result["status"] == "success"
-        assert document.source == "sample.txt"
-        assert len(chunks) > 0
-        assert report["status"] == "success"
-        assert report["total_chunks"] == len(chunks)
-        assert report["extracted_characters"] == len(document.content)
-        assert report["processing_time_seconds"] >= 0
+        document_id = None
 
-        print("\nCOMPLETE INGESTION PIPELINE SUCCESSFUL")
-        print("\nINGESTION REPORT:")
+        try:
+            result = process_document(
+                "sample.txt",
+                text.encode("utf-8"),
+                registry=registry,
+                vector_store=vector_store
+            )
 
-        for key, value in report.items():
-            print(f"{key}: {value}")
+            document = result["document"]
+            document_id = document.document_id
+            chunks = result["chunks"]
+            report = result["report"]
+
+            assert result["status"] == "success"
+            assert document.source == "sample.txt"
+            assert len(chunks) > 0
+            assert result["registry"]["status"] == "registered"
+            assert result["storage"]["status"] == "saved"
+            assert result["vectors"]["status"] == "success"
+
+            assert report["status"] == "success"
+            assert report["total_chunks"] == len(chunks)
+            assert report["extracted_characters"] == len(document.content)
+            assert report["processing_time_seconds"] >= 0
+
+            assert vector_store.count() == len(chunks)
+
+            print("\nCOMPLETE INGESTION PIPELINE SUCCESSFUL")
+
+            for key, value in report.items():
+                print(f"{key}: {value}")
+
+        finally:
+            if document_id:
+                vector_store.delete_document(document_id)
 
 
 def test_duplicate_document_detection():
 
-    text = (
-        "Artificial intelligence is transforming industries."
-    )
-
+    text = "Artificial intelligence is transforming industries."
     file_bytes = text.encode("utf-8")
 
-    document = load_document(
-        "sample.txt",
-        file_bytes
-    )
+    document = load_document("sample.txt", file_bytes)
 
     with tempfile.TemporaryDirectory() as temp_dir:
 
@@ -131,16 +155,10 @@ def test_duplicate_document_detection():
         assert first_result["status"] == "registered"
         assert first_result["is_duplicate"] is False
 
-        duplicate_result = registry.find_duplicate(
-            file_bytes
-        )
+        duplicate_result = registry.find_duplicate(file_bytes)
 
         assert duplicate_result is not None
-
-        assert (
-            duplicate_result["document_id"]
-            == document.document_id
-        )
+        assert duplicate_result["document_id"] == document.document_id
 
         second_result = registry.register_document(
             document,
@@ -157,52 +175,76 @@ def test_duplicate_document_detection():
 
 
 def test_pipeline_duplicate_detection():
+
     text = (
         "Production AI evaluation platform "
         "with document ingestion and automated evaluation."
     )
+
     file_bytes = text.encode("utf-8")
 
     with tempfile.TemporaryDirectory() as temp_dir:
+
         registry = DocumentRegistry(
             f"{temp_dir}/pipeline_registry.db"
         )
 
-        first_result = process_document(
-            "sample.txt",
-            file_bytes,
-            registry=registry
+        vector_store = VectorStore(
+            persist_directory="datasets/chroma_test_db"
         )
 
-        second_result = process_document(
-            "sample.txt",
-            file_bytes,
-            registry=registry
-        )
+        clear_test_vectors(vector_store)
 
-        assert first_result["status"] == "success"
-        assert first_result["registry"]["status"] == "registered"
-        assert len(first_result["chunks"]) > 0
+        document_id = None
 
-        assert second_result["status"] == "duplicate"
-        assert second_result["document"] is None
-        assert second_result["chunks"] == []
-        assert second_result["registry"]["is_duplicate"] is True
+        try:
+            first_result = process_document(
+                "sample.txt",
+                file_bytes,
+                registry=registry,
+                vector_store=vector_store
+            )
 
-        assert (
-            first_result["document"].document_id
-            == second_result["duplicate"]["document_id"]
-        )
+            document_id = first_result["document"].document_id
 
-        print("\nPIPELINE DUPLICATE DETECTION SUCCESSFUL")
-        print("First upload:", first_result["status"])
-        print("Second upload:", second_result["status"])
-        print(
-            "Existing document ID:",
-            second_result["duplicate"]["document_id"]
-        )
+            second_result = process_document(
+                "sample.txt",
+                file_bytes,
+                registry=registry,
+                vector_store=vector_store
+            )
+
+            assert first_result["status"] == "success"
+            assert first_result["registry"]["status"] == "registered"
+            assert len(first_result["chunks"]) > 0
+
+            assert second_result["status"] == "duplicate"
+            assert second_result["document"] is None
+            assert second_result["chunks"] == []
+            assert second_result["registry"]["is_duplicate"] is True
+
+            assert (
+                document_id
+                == second_result["duplicate"]["document_id"]
+            )
+
+            assert (
+                vector_store.count()
+                == len(first_result["chunks"])
+            )
+
+            print("\nPIPELINE DUPLICATE DETECTION SUCCESSFUL")
+            print("First upload:", first_result["status"])
+            print("Second upload:", second_result["status"])
+            print("Existing document ID:", document_id)
+
+        finally:
+            if document_id:
+                vector_store.delete_document(document_id)
+
 
 def test_document_storage():
+
     text = (
         "Production AI evaluation platform with "
         "document ingestion, chunking and storage. "
@@ -235,7 +277,6 @@ def test_document_storage():
         assert save_result["status"] == "stored"
         assert save_result["total_chunks"] == len(chunks)
 
-        # Reopen the database to verify persistence
         store = DocumentStore(db_path)
 
         saved_document = store.get_document(
@@ -252,10 +293,7 @@ def test_document_storage():
 
         assert len(saved_chunks) == len(chunks)
 
-        assert (
-            saved_chunks[0]["content"]
-            == chunks[0]["content"]
-        )
+        assert saved_chunks[0]["content"] == chunks[0]["content"]
 
         documents = store.list_documents()
 
@@ -275,7 +313,9 @@ def test_document_storage():
         print("Persistence: verified")
         print("Document deletion: successful")
 
+
 if __name__ == "__main__":
+
     test_txt_ingestion()
     test_document_chunking()
     test_complete_ingestion_pipeline()
